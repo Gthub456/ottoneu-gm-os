@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ottoneu
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/ottoneu
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_BACKEND_URL: redis://redis:6379/1
+      OTTONEU_LEAGUE_ID: ${OTTONEU_LEAGUE_ID:-}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+
+  worker:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/ottoneu
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_BACKEND_URL: redis://redis:6379/1
+      OTTONEU_LEAGUE_ID: ${OTTONEU_LEAGUE_ID:-}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+    command: celery -A backend.app.tasks worker --beat --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+    volumes:
+      - ./frontend:/usr/src/app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000/api
+    command: npm run dev
+
+volumes:
+  db-data:
